@@ -2,3 +2,4 @@ tensorflow==2.9.1
 flask==2.2.2
 numpy
 requests
+werkzeug==2.2.2
