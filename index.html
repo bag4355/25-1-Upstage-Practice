@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>MNIST Digit Classifier</title>
+  <style>
+    /* 공통 스타일 초기화 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #f2f2f2 0%, #ffffff 100%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      color: #333;
+    }
+
+    /* 카드 레이아웃 컨테이너 */
+    .container {
+      background: #fff;
+      max-width: 500px;
+      width: 90%;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+      overflow: hidden;
+      position: relative;
+      animation: fadeIn 0.4s ease-in-out;
+    }
+
+    /* 상단 헤더 영역 */
+    .header {
+      background: #fafafa;
+      padding: 20px;
+      text-align: center;
+      border-bottom: 1px solid #eee;
+    }
+
+    .header h1 {
+      font-weight: 600;
+      font-size: 1.5em;
+      color: #333;
+      margin: 0;
+    }
+
+    /* 내용 영역 */
+    .content {
+      padding: 20px;
+      text-align: center;
+    }
+
+    /* 섹션들: input-section, result-section 각각 block, none 전환 */
+    #input-section, #result-section {
+      display: none; /* JS에서 전환 */
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    /* 캔버스 스타일 */
+    #canvas {
+      border: 2px dashed #ccc;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      cursor: crosshair;
+    }
+
+    /* 버튼 스타일 */
+    .btn {
+      margin: 10px;
+      padding: 12px 24px;
+      background-color: #5c6bc0;
+      color: #fff;
+      font-weight: 600;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .btn:hover {
+      background-color: #3f51b5;
+      transform: scale(1.02);
+    }
+
+    .btn:active {
+      background-color: #3949ab;
+      transform: scale(0.98);
+    }
+
+    .result-text {
+      margin: 20px 0;
+      font-size: 1.2em;
+      color: #333;
+    }
+
+    /* 심플한 페이드 인 애니메이션 */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 헤더 영역 -->
+    <div class="header">
+      <h1>MNIST Digit Classifier</h1>
+    </div>
+    
+    <!-- 내용 영역 -->
+    <div class="content">
+      <!-- 숫자 입력 영역 -->
+      <div id="input-section">
+        <canvas id="canvas" width="280" height="280"></canvas><br>
+        <button id="predict-btn" class="btn">Predict</button>
+        <button id="clear-btn" class="btn" style="background-color:#d32f2f;">Clear</button>
+      </div>
+
+      <!-- 예측 결과 영역 -->
+      <div id="result-section">
+        <div class="result-text">
+          Prediction: <span id="prediction-label"></span>
+        </div>
+        <button id="retry-btn" class="btn" style="background-color:#00796b;">Try Again</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const inputSection = document.getElementById("input-section");
+    const resultSection = document.getElementById("result-section");
+    const predictBtn = document.getElementById("predict-btn");
+    const clearBtn = document.getElementById("clear-btn");
+    const retryBtn = document.getElementById("retry-btn");
+    const predictionLabel = document.getElementById("prediction-label");
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    let drawing = false;
+
+    // 초기화 (첫 화면)
+    function init() {
+      inputSection.style.display = "block";
+      resultSection.style.display = "none";
+
+      // 캔버스를 흰색 배경으로 채움
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // 캔버스 마우스 드래그로 그림 그리기
+    canvas.addEventListener("mousedown", () => { drawing = true; });
+    canvas.addEventListener("mouseup", () => { drawing = false; });
+    canvas.addEventListener("mousemove", (e) => {
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      ctx.fillStyle = "black";
+      // 간단하게 10x10 픽셀 사각형으로 채우기
+      ctx.fillRect(x, y, 10, 10);
+    });
+
+    // Clear 버튼
+    clearBtn.addEventListener("click", () => {
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    });
+
+    // Predict 버튼
+    predictBtn.addEventListener("click", async () => {
+      // 1. Canvas 이미지를 28x28로 리사이즈
+      const resizedCanvas = document.createElement("canvas");
+      resizedCanvas.width = 28;
+      resizedCanvas.height = 28;
+      const rctx = resizedCanvas.getContext("2d");
+      rctx.drawImage(canvas, 0, 0, 28, 28);
+      const resizedData = rctx.getImageData(0, 0, 28, 28);
+
+      // 2. 픽셀 배열 생성 (0~255 범위)
+      let pixels = [];
+      for (let i = 0; i < resizedData.data.length; i += 4) {
+        // RGBA 중 R=G=B=회색값 (단색)
+        const gray = resizedData.data[i];
+        pixels.push(gray);
+      }
+
+      // 3. Flask 서버에 POST 요청
+      try {
+        const response = await fetch("/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: pixels })
+        });
+        const result = await response.json();
+        console.log("result:", result);
+
+        // 4. 결과 화면 표시
+        predictionLabel.textContent = result.prediction;
+        inputSection.style.display = "none";
+        resultSection.style.display = "block";
+      } catch (err) {
+        console.error(err);
+        alert("서버 예측 요청 중 오류가 발생했습니다.");
+      }
+    });
+
+    // 다시 시도 (Try Again) 버튼
+    retryBtn.addEventListener("click", () => {
+      init();
+    });
+
+    // 페이지 처음 로드 시 초기화
+    init();
+  </script>
+</body>
+</html>
